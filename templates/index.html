@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <title>Paralel/Seri Görüntü İşleme Benchmark</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body>
+    <div class="main-bg">
+        <div class="container">
+            <header>
+                <i class="fa-solid fa-microchip fa-2x logo"></i>
+                <h1>Paralel & Seri Görüntü İşleme <span class="highlight">Benchmark</span></h1>
+                <p class="desc">Çekirdek sayısı, test tipi, süre ve mod seçin. Performansı ölçün, sonuçları tablo ve grafikle karşılaştırın.</p>
+            </header>
+            <div class="card info-card" style="margin-bottom:24px;">
+                <h2><i class="fa-solid fa-circle-info"></i> Metriklerin Hesaplanma Yöntemi</h2>
+                <ul style="font-size:1.05em;line-height:1.7;">
+                    <li><b>Mod:</b> Paralel (çoklu çekirdek) veya Seri (tek çekirdek) işlem.</li>
+                    <li><b>İşlenen:</b> O ana kadar işlenen toplam görsel+işlem sayısı.</li>
+                    <li><b>CPU (%):</b> Test boyunca periyodik olarak alınan anlık CPU kullanım yüzdelerinin ortalaması. (psutil.cpu_percent)</li>
+                    <li><b>RAM (MB):</b> Test boyunca anlık RAM kullanımının maksimumu. (psutil.Process().memory_info().rss)</li>
+                    <li><b>Süre (sn):</b> Testin başından o ana kadar geçen toplam süre.</li>
+                    <li><b>Enerji:</b> Süre (sn) × Ortalama CPU kullanımı (%). Yani işlem süresi boyunca CPU'nun ne kadar aktif çalıştığını gösterir.</li>
+                    <li><b>Disk Okuma/Yazma (MB/s):</b> Test sırasında okunan/yazılan toplam veri miktarının (MB) geçen süreye bölünmesiyle elde edilir. (psutil.disk_io_counters)</li>
+                    <li><b>CPU Süresi (sn):</b> Test süresince işlemci tarafından harcanan toplam CPU zamanı (user+system). (psutil.Process().cpu_times)</li>
+                    <li><b>Enerji Verimliliği:</b> Enerji / İşlenen. Bir görsel+işlem başına ortalama enerji.</li>
+                    <li><b>Süre Verimliliği:</b> Süre (sn) / İşlenen. Bir görsel+işlem başına ortalama süre.</li>
+                </ul>
+            </div>
+            <form id="benchmarkForm" class="card form-card">
+                <div class="form-row">
+                    <label><i class="fa-solid fa-microchip"></i> Çekirdek Sayısı
+                        <input type="number" name="cores" min="1" max="16" value="4" required>
+                    </label>
+                    <label><i class="fa-solid fa-list-check"></i> Test Tipi
+                        <select name="testtype" id="testtype">
+                            <option value="timed">Süreli test</option>
+                            <option value="all">Tümünü işle</option>
+                        </select>
+                    </label>
+                    <label><i class="fa-solid fa-clock"></i> Süre (saniye)
+                        <input type="number" name="duration" id="durationInput" min="1" max="120" value="15" required>
+                    </label>
+                    <label><i class="fa-solid fa-gears"></i> Mod
+                        <select name="mode">
+                            <option value="both">Paralel + Seri</option>
+                            <option value="paralel">Sadece Paralel</option>
+                            <option value="seri">Sadece Seri</option>
+                        </select>
+                    </label>
+                </div>
+                <button type="submit" class="main-btn"><i class="fa-solid fa-play"></i> Başlat</button>
+            </form>
+            <div id="progressBarWrap" style="display:none;">
+                <div class="progress-label"><i class="fa-solid fa-spinner fa-spin"></i> Test devam ediyor... <span id="progressPercent">0%</span></div>
+                <div class="progress-bar-bg">
+                    <div class="progress-bar" id="progressBar"></div>
+                </div>
+            </div>
+            <div id="steps" style="display:none;"></div>
+            <div id="stepsChartWrap" style="display:none;">
+                <div class="card step-chart-card">
+                    <h2><i class="fa-solid fa-chart-line"></i> Ara Sonuçlar Grafiği</h2>
+                    <canvas id="stepsChart" width="600" height="300"></canvas>
+                </div>
+            </div>
+            <div id="results" style="display:none;">
+                <div class="card results-card">
+                    <h2><i class="fa-solid fa-chart-column"></i> Sonuçlar</h2>
+                    <div class="responsive-table">
+                        <table id="resultsTable">
+                            <thead>
+                                <tr>
+                                    <th>Mod</th>
+                                    <th>İşlenen</th>
+                                    <th>CPU (%)</th>
+                                    <th>RAM (MB)</th>
+                                    <th>Süre (sn)</th>
+                                    <th>Enerji</th>
+                                    <th>Disk Okuma (MB/s)</th>
+                                    <th>Disk Yazma (MB/s)</th>
+                                    <th>CPU Süresi (sn)</th>
+                                    <th>Enerji Verimliliği</th>
+                                    <th>Süre Verimliliği</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                    <div class="chart-wrap">
+                        <canvas id="resultsChart" width="600" height="300"></canvas>
+                    </div>
+                </div>
+            </div>
+            <div id="heatmapWrap" style="display:none;">
+                <div class="card step-chart-card">
+                    <h2><i class="fa-solid fa-fire"></i> Isı Haritası (Heatmap)</h2>
+                    <canvas id="heatmapChart" width="600" height="300"></canvas>
+                </div>
+            </div>
+            <footer>
+                <p>© 2025 Paralel Görüntü İşleme Furkan Çolak  | <i class="fa-solid fa-code"></i> by AI</p>
+            </footer>
+        </div>
+    </div>
+    <script>
+    // Test tipi seçimine göre süre inputunu aktif/pasif yap
+    document.getElementById('testtype').addEventListener('change', function() {
+        const durationInput = document.getElementById('durationInput');
+        if (this.value === 'all') {
+            durationInput.disabled = true;
+            durationInput.style.background = '#eaeaea';
+        } else {
+            durationInput.disabled = false;
+            durationInput.style.background = '';
+        }
+    });
+    let progressInterval = null;
+    function startProgressBar() {
+        document.getElementById('progressBarWrap').style.display = '';
+        document.getElementById('progressBar').style.width = '0%';
+        document.getElementById('progressPercent').innerText = '0%';
+        progressInterval = setInterval(async () => {
+            const res = await fetch('/progress');
+            const data = await res.json();
+            document.getElementById('progressBar').style.width = data.percent + '%';
+            document.getElementById('progressPercent').innerText = data.percent + '%';
+            if (!data.running || data.percent >= 100) {
+                clearInterval(progressInterval);
+                setTimeout(() => {
+                    document.getElementById('progressBarWrap').style.display = 'none';
+                }, 800);
+            }
+        }, 500);
+    }
+    function renderStepTables(steps, mode) {
+        const stepsDiv = document.getElementById('steps');
+        if (!steps || steps.length === 0) { stepsDiv.style.display = 'none'; return; }
+        let html = '<h2><i class="fa-solid fa-table-list"></i> Ara Sonuçlar (Her 3 sn)</h2>';
+        html += '<div class="step-tables">';
+        steps.forEach(step => {
+            html += `<div class="card step-card"><b>${step.time}. saniye</b><table><thead><tr>`;
+            html += '<th>Mod</th><th>İşlenen</th><th>CPU (%)</th><th>RAM (MB)</th><th>Süre (sn)</th><th>Enerji</th><th>Disk Okuma (MB/s)</th><th>Disk Yazma (MB/s)</th><th>CPU Süresi (sn)</th><th>Enerji Verimliliği</th><th>Süre Verimliliği</th></tr></thead><tbody>';
+            if (step.paralel) html += `<tr><td>Paralel</td><td>${step.paralel.count}</td><td>${step.paralel.cpu}</td><td>${step.paralel.ram}</td><td>${step.paralel.elapsed}</td><td>${step.paralel.energy}</td><td>${step.paralel.disk_read}</td><td>${step.paralel.disk_write}</td><td>${step.paralel.cpu_time}</td><td>${step.paralel.eff_energy}</td><td>${step.paralel.eff_time}</td></tr>`;
+            if (step.seri) html += `<tr><td>Seri</td><td>${step.seri.count}</td><td>${step.seri.cpu}</td><td>${step.seri.ram}</td><td>${step.seri.elapsed}</td><td>${step.seri.energy}</td><td>${step.seri.disk_read}</td><td>${step.seri.disk_write}</td><td>${step.seri.cpu_time}</td><td>${step.seri.eff_energy}</td><td>${step.seri.eff_time}</td></tr>`;
+            html += '</tbody></table></div>';
+        });
+        html += '</div>';
+        stepsDiv.innerHTML = html;
+        stepsDiv.style.display = '';
+    }
+    // Yeni: Ara Sonuçlar Grafiği
+    function renderStepChart(steps) {
+        if (!steps || steps.length === 0) {
+            document.getElementById('stepsChartWrap').style.display = 'none';
+            return;
+        }
+        document.getElementById('stepsChartWrap').style.display = '';
+        const labels = steps.map(s => s.time + '. sn');
+        const metrics = ['count', 'cpu', 'ram', 'elapsed', 'energy', 'disk_read', 'disk_write', 'cpu_time', 'eff_energy', 'eff_time'];
+        const paralelData = {count: [], cpu: [], ram: [], elapsed: [], energy: [], disk_read: [], disk_write: [], cpu_time: [], eff_energy: [], eff_time: []};
+        const seriData = {count: [], cpu: [], ram: [], elapsed: [], energy: [], disk_read: [], disk_write: [], cpu_time: [], eff_energy: [], eff_time: []};
+        steps.forEach(s => {
+            if (s.paralel) metrics.forEach(m => paralelData[m].push(Number(s.paralel[m] ?? null)));
+            else metrics.forEach(m => paralelData[m].push(null));
+            if (s.seri) metrics.forEach(m => seriData[m].push(Number(s.seri[m] ?? null)));
+            else metrics.forEach(m => seriData[m].push(null));
+        });
+        const ctx = document.getElementById('stepsChart').getContext('2d');
+        if(window.stepsChartObj) window.stepsChartObj.destroy();
+        window.stepsChartObj = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    // İşlenen
+                    {
+                        label: 'Paralel - İşlenen',
+                        data: paralelData.count,
+                        borderColor: 'rgba(54,162,235,1)',
+                        backgroundColor: 'rgba(54,162,235,0.1)',
+                        tension: 0.2,
+                        yAxisID: 'y',
+                    },
+                    {
+                        label: 'Seri - İşlenen',
+                        data: seriData.count,
+                        borderColor: 'rgba(255,99,132,1)',
+                        backgroundColor: 'rgba(255,99,132,0.1)',
+                        tension: 0.2,
+                        yAxisID: 'y',
+                    },
+                    // CPU
+                    {
+                        label: 'Paralel - CPU (%)',
+                        data: paralelData.cpu,
+                        borderColor: 'rgba(54,162,235,0.7)',
+                        borderDash: [5,5],
+                        fill: false,
+                        tension: 0.2,
+                        yAxisID: 'y1',
+                    },
+                    {
+                        label: 'Seri - CPU (%)',
+                        data: seriData.cpu,
+                        borderColor: 'rgba(255,99,132,0.7)',
+                        borderDash: [5,5],
+                        fill: false,
+                        tension: 0.2,
+                        yAxisID: 'y1',
+                    },
+                    // RAM
+                    {
+                        label: 'Paralel - RAM (MB)',
+                        data: paralelData.ram,
+                        borderColor: 'rgba(54,162,235,0.4)',
+                        borderDash: [2,2],
+                        fill: false,
+                        tension: 0.2,
+                        yAxisID: 'y2',
+                    },
+                    {
+                        label: 'Seri - RAM (MB)',
+                        data: seriData.ram,
+                        borderColor: 'rgba(255,99,132,0.4)',
+                        borderDash: [2,2],
+                        fill: false,
+                        tension: 0.2,
+                        yAxisID: 'y2',
+                    },
+                    // Süre
+                    {
+                        label: 'Paralel - Süre (sn)',
+                        data: paralelData.elapsed,
+                        borderColor: 'rgba(54,162,235,0.9)',
+                        borderDash: [8,4],
+                        fill: false,
+                        tension: 0.2,
+                        yAxisID: 'y3',
+                    },
+                    {
+                        label: 'Seri - Süre (sn)',
+                        data: seriData.elapsed,
+                        borderColor: 'rgba(255,99,132,0.9)',
+                        borderDash: [8,4],
+                        fill: false,
+                        tension: 0.2,
+                        yAxisID: 'y3',
+                    },
+                    // Enerji
+                    {
+                        label: 'Paralel - Enerji',
+                        data: paralelData.energy,
+                        borderColor: 'rgba(54,162,235,0.2)',
+                        borderDash: [1,0],
+                        fill: false,
+                        tension: 0.2,
+                        yAxisID: 'y4',
+                    },
+                    {
+                        label: 'Seri - Enerji',
+                        data: seriData.energy,
+                        borderColor: 'rgba(255,99,132,0.2)',
+                        borderDash: [1,0],
+                        fill: false,
+                        tension: 0.2,
+                        yAxisID: 'y4',
+                    },
+                    // Enerji Verimliliği
+                    {
+                        label: 'Paralel - Enerji Verimliliği',
+                        data: paralelData.eff_energy,
+                        borderColor: 'rgba(0,128,0,1)',
+                        borderDash: [4,2],
+                        fill: false,
+                        tension: 0.2,
+                        yAxisID: 'y6',
+                    },
+                    {
+                        label: 'Seri - Enerji Verimliliği',
+                        data: seriData.eff_energy,
+                        borderColor: 'rgba(0,128,0,0.5)',
+                        borderDash: [4,2],
+                        fill: false,
+                        tension: 0.2,
+                        yAxisID: 'y6',
+                    },
+                    // Süre Verimliliği
+                    {
+                        label: 'Paralel - Süre Verimliliği',
+                        data: paralelData.eff_time,
+                        borderColor: 'rgba(0,0,0,1)',
+                        borderDash: [1,1],
+                        fill: false,
+                        tension: 0.2,
+                        yAxisID: 'y7',
+                    },
+                    {
+                        label: 'Seri - Süre Verimliliği',
+                        data: seriData.eff_time,
+                        borderColor: 'rgba(0,0,0,0.5)',
+                        borderDash: [1,1],
+                        fill: false,
+                        tension: 0.2,
+                        yAxisID: 'y7',
+                    },
+                    // Disk Okuma
+                    {
+                        label: 'Paralel - Disk Okuma (MB/s)',
+                        data: paralelData.disk_read,
+                        borderColor: 'rgba(0,0,255,0.7)',
+                        borderDash: [6,2],
+                        fill: false,
+                        tension: 0.2,
+                        yAxisID: 'y8',
+                    },
+                    {
+                        label: 'Seri - Disk Okuma (MB/s)',
+                        data: seriData.disk_read,
+                        borderColor: 'rgba(0,0,255,0.3)',
+                        borderDash: [6,2],
+                        fill: false,
+                        tension: 0.2,
+                        yAxisID: 'y8',
+                    },
+                    // Disk Yazma
+                    {
+                        label: 'Paralel - Disk Yazma (MB/s)',
+                        data: paralelData.disk_write,
+                        borderColor: 'rgba(255,140,0,0.7)',
+                        borderDash: [8,2],
+                        fill: false,
+                        tension: 0.2,
+                        yAxisID: 'y9',
+                    },
+                    {
+                        label: 'Seri - Disk Yazma (MB/s)',
+                        data: seriData.disk_write,
+                        borderColor: 'rgba(255,140,0,0.3)',
+                        borderDash: [8,2],
+                        fill: false,
+                        tension: 0.2,
+                        yAxisID: 'y9',
+                    },
+                    // CPU Süresi
+                    {
+                        label: 'Paralel - CPU Süresi (sn)',
+                        data: paralelData.cpu_time,
+                        borderColor: 'rgba(128,0,128,1)',
+                        borderDash: [2,6],
+                        fill: false,
+                        tension: 0.2,
+                        yAxisID: 'y10',
+                    },
+                    {
+                        label: 'Seri - CPU Süresi (sn)',
+                        data: seriData.cpu_time,
+                        borderColor: 'rgba(128,0,128,0.5)',
+                        borderDash: [2,6],
+                        fill: false,
+                        tension: 0.2,
+                        yAxisID: 'y10',
+                    },
+                ]
+            },
+            options: {
+                responsive: true,
+                interaction: {mode: 'index', intersect: false},
+                stacked: false,
+                plugins: {
+                    legend: {position: 'top'},
+                    title: {display: false}
+                },
+                scales: {
+                    y: {
+                        type: 'linear',
+                        display: true,
+                        position: 'left',
+                        title: {display: true, text: 'İşlenen'}
+                    },
+                    y1: {
+                        type: 'linear',
+                        display: true,
+                        position: 'right',
+                        grid: {drawOnChartArea: false},
+                        title: {display: true, text: 'CPU (%)'}
+                    },
+                    y2: {
+                        type: 'linear',
+                        display: false,
+                        position: 'left',
+                        title: {display: true, text: 'RAM (MB)'}
+                    },
+                    y3: {
+                        type: 'linear',
+                        display: false,
+                        position: 'left',
+                        title: {display: true, text: 'Süre (sn)'}
+                    },
+                    y4: {
+                        type: 'linear',
+                        display: false,
+                        position: 'left',
+                        title: {display: true, text: 'Enerji'}
+                    },
+                    y6: {type: 'linear', display: false, position: 'left', title: {display: true, text: 'Enerji Verimliliği'}},
+                    y7: {type: 'linear', display: false, position: 'left', title: {display: true, text: 'Süre Verimliliği'}},
+                    y8: {type: 'linear', display: false, position: 'left', title: {display: true, text: 'Disk Okuma (MB/s)'}},
+                    y9: {type: 'linear', display: false, position: 'left', title: {display: true, text: 'Disk Yazma (MB/s)'}},
+                    y10: {type: 'linear', display: false, position: 'left', title: {display: true, text: 'CPU Süresi (sn)'}},
+                }
+            }
+        });
+    }
+    document.getElementById('benchmarkForm').onsubmit = async function(e) {
+        e.preventDefault();
+        document.getElementById('results').style.display = 'none';
+        document.getElementById('steps').style.display = 'none';
+        startProgressBar();
+        const form = e.target;
+        const data = {
+            cores: Math.min(16, form.cores.value),
+            duration: form.duration.value,
+            mode: form.mode.value,
+            testtype: form.testtype.value
+        };
+        const res = await fetch('/run', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        });
+        const result = await res.json();
+        // Ara sonuçlar (steps)
+        renderStepTables(result.steps, result.mode);
+        renderStepChart(result.steps);
+        // Genel tablo
+        const tbody = document.querySelector('#resultsTable tbody');
+        tbody.innerHTML = '';
+        result.results.forEach(r => {
+            tbody.innerHTML += `<tr><td>${r.label}</td><td>${r.count}</td><td>${r.cpu}</td><td>${r.ram}</td><td>${r.time}</td><td>${r.energy}</td><td>${r.disk_read}</td><td>${r.disk_write}</td><td>${r.cpu_time}</td><td>${r.eff_energy}</td><td>${r.eff_time}</td></tr>`;
+        });
+        // Karşılaştırmalı grafik (her metrik için paralel ve seri barları)
+        const ctx = document.getElementById('resultsChart').getContext('2d');
+        if(window.benchChart) window.benchChart.destroy();
+        // Metrik bazında barlar: İşlenen, CPU, RAM, Süre, Enerji, Disk Okuma, Disk Yazma, CPU Süresi, Enerji Verimliliği, Süre Verimliliği
+        const metrics = ['İşlenen', 'CPU (%)', 'RAM (MB)', 'Süre (sn)', 'Enerji', 'Disk Okuma (MB/s)', 'Disk Yazma (MB/s)', 'CPU Süresi (sn)', 'Enerji Verimliliği', 'Süre Verimliliği'];
+        const paralel = result.results.find(r => r.label === 'Paralel') || {};
+        const seri = result.results.find(r => r.label === 'Seri') || {};
+        window.benchChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: metrics,
+                datasets: [
+                    {
+                        label: 'Paralel',
+                        data: [paralel.count, paralel.cpu, paralel.ram, paralel.time, paralel.energy, paralel.disk_read, paralel.disk_write, paralel.cpu_time, paralel.eff_energy, paralel.eff_time],
+                        backgroundColor: 'rgba(54,162,235,0.7)'
+                    },
+                    {
+                        label: 'Seri',
+                        data: [seri.count, seri.cpu, seri.ram, seri.time, seri.energy, seri.disk_read, seri.disk_write, seri.cpu_time, seri.eff_energy, seri.eff_time],
+                        backgroundColor: 'rgba(255,99,132,0.7)'
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: {position: 'top'},
+                    title: {display: false}
+                },
+                scales: {y: {beginAtZero: true}}
+            }
+        });
+        document.getElementById('results').style.display = '';
+    };
+    </script>
+    <style>
+    .step-chart-card {
+        margin: 24px 0;
+        padding: 20px;
+        background: #f8fbff;
+        border-radius: 12px;
+        box-shadow: 0 2px 8px #0001;
+    }
+    .info-card {
+        background: #f8fbff;
+        border-radius: 12px;
+        box-shadow: 0 2px 8px #0001;
+        padding: 20px 28px;
+        margin-bottom: 24px;
+    }
+    .info-card h2 {
+        font-size: 1.2em;
+        margin-bottom: 10px;
+        color: #1a4a7a;
+    }
+    .info-card ul {
+        margin: 0;
+        padding-left: 18px;
+    }
+    .info-card li {
+        margin-bottom: 4px;
+    }
+    </style>
+</body>
+</html> 

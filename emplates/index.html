@@ -1,0 +1,93 @@
+<script src="https://cdn.jsdelivr.net/npm/chartjs-chart-matrix@4.1.0/dist/chartjs-chart-matrix.min.js"></script>
+
+function renderHeatmap(steps) {
+    if (!steps || steps.length === 0) {
+        document.getElementById('heatmapWrap').style.display = 'none';
+        return;
+    }
+    document.getElementById('heatmapWrap').style.display = '';
+    // Heatmap için: CPU, RAM, Enerji, Enerji Verimliliği, Süre Verimliliği
+    const metrics = [
+        {key: 'cpu', label: 'CPU (%)'},
+        {key: 'ram', label: 'RAM (MB)'},
+        {key: 'energy', label: 'Enerji'},
+        {key: 'eff_energy', label: 'Enerji Verimliliği'},
+        {key: 'eff_time', label: 'Süre Verimliliği'}
+    ];
+    const modes = ['paralel', 'seri'];
+    // Data: [{x: step, y: metric, v: value}]
+    let data = [];
+    steps.forEach((step, i) => {
+        metrics.forEach((m, j) => {
+            modes.forEach((mode, k) => {
+                if (step[mode] && step[mode][m.key] !== undefined && step[mode][m.key] !== null) {
+                    data.push({
+                        x: i + 1,
+                        y: j * 2 + k, // her metrik için 2 satır: paralel/seri
+                        v: Number(step[mode][m.key])
+                    });
+                }
+            });
+        });
+    });
+    // Y ekseni label'ları
+    const yLabels = metrics.flatMap(m => [m.label + ' (Paralel)', m.label + ' (Seri)']);
+    // Renk skalası (daha iyi için d3-scale veya chroma.js eklenebilir)
+    function getColor(v, min, max) {
+        const t = (v - min) / (max - min + 0.0001);
+        const r = Math.round(255 * t);
+        const g = Math.round(255 * (1 - t));
+        return `rgb(${r},${g},80)`;
+    }
+    // Min/max bul
+    const values = data.map(d => d.v);
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const ctx = document.getElementById('heatmapChart').getContext('2d');
+    if(window.heatmapChartObj) window.heatmapChartObj.destroy();
+    window.heatmapChartObj = new Chart(ctx, {
+        type: 'matrix',
+        data: {
+            datasets: [{
+                label: 'Isı Haritası',
+                data: data,
+                backgroundColor: d => getColor(d.raw.v, min, max),
+                width: ({chart}) => (chart.chartArea || {}).width / steps.length - 2,
+                height: ({chart}) => ((chart.chartArea || {}).height / yLabels.length) - 2,
+                borderWidth: 1,
+                borderColor: '#fff'
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {display: false},
+                tooltip: {
+                    callbacks: {
+                        title: ctx => `Step: ${ctx[0].raw.x}`,
+                        label: ctx => `${yLabels[ctx.raw.y]}: ${ctx.raw.v}`
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    type: 'linear',
+                    min: 1,
+                    max: steps.length,
+                    title: {display: true, text: 'Adım'},
+                    ticks: {stepSize: 1}
+                },
+                y: {
+                    type: 'category',
+                    labels: yLabels,
+                    title: {display: true, text: 'Metrik'},
+                    offset: true
+                }
+            }
+        }
+    });
+}
+
+renderStepTables(result.steps, result.mode);
+renderStepChart(result.steps);
+renderHeatmap(result.steps); 
